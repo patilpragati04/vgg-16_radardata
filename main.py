@@ -86,8 +86,8 @@ for row in rows:
 # convert the data and targets to NumPy arrays, scaling the input
 # pixel intensities from the range [0, 255] to [0, 1]
 data = np.array(data, dtype="float32") / 255.0
-if xtl != "":
-	targets = np.array(bboxes, dtype="float32")
+# if xtl != "":
+# 	bboxes = np.array(bboxes, dtype="float32")
 labels = np.array(labels)
 bboxes = np.array(bboxes, dtype="float32")
 imagePaths = np.array(imagePaths)
