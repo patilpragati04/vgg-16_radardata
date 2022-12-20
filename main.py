@@ -9,6 +9,8 @@ from keras.models import Model
 from keras.optimizers import Adam
 from keras.utils import img_to_array
 from keras.utils import load_img
+import keras
+from keras.metrics import Accuracy, FalseNegatives, FalsePositives, TrueNegatives,TruePositives, Precision, Recall, AUC, BinaryAccuracy
 from sklearn.model_selection import train_test_split
 from keras.utils import to_categorical
 from sklearn.preprocessing import LabelBinarizer
@@ -23,8 +25,10 @@ import pickle
 # define the base path to the input dataset and then use it to derive
 # the path to the images directory and annotation CSV file
 BASE_PATH = "dataset"
-IMAGES_PATH = os.path.sep.join([BASE_PATH, "JPEGImages"])
-ANNOTS_PATH = os.path.sep.join([BASE_PATH, "annotations.csv"])
+Train_IMAGES_PATH = os.path.sep.join([BASE_PATH, "train_images"])
+Train_ANNOTS_PATH = os.path.sep.join([BASE_PATH, "train_annotations.csv"])
+Validation_IMAGES_PATH = os.path.sep.join([BASE_PATH, "ValidationImages"])
+Validation_ANNOTS_PATH = os.path.sep.join([BASE_PATH, "validation_annotations.csv"])
 # define the path to the base output directory
 BASE_OUTPUT = "output"
 # define the path to the output serialized model, model training plot,
@@ -32,7 +36,8 @@ BASE_OUTPUT = "output"
 MODEL_PATH = os.path.sep.join([BASE_OUTPUT, "detector.h5"])
 LOSS_PATH = os.path.sep.join([BASE_OUTPUT, "loss.png"])
 ACCURACY_PATH = os.path.sep.join([BASE_OUTPUT, "acc.png"])
-TEST_FILENAMES = os.path.sep.join([BASE_OUTPUT, "test_images.txt"])
+FEATUREMAP_PATH = os.path.sep.join([BASE_OUTPUT, "featuremap.png"])
+# TEST_FILENAMES = os.path.sep.join([BASE_OUTPUT, "test_images.txt"])
 LB_PATH = os.path.sep.join([BASE_OUTPUT, "lb.pickle"])
 # initialize our initial learning rate, number of epochs to train
 # for, and the batch size
@@ -41,27 +46,32 @@ NUM_EPOCHS = 1
 BATCH_SIZE = 32
 # load the contents of the CSV annotations file
 print("[INFO] loading dataset...")
-rows = open(ANNOTS_PATH).read().strip().split("\n")
+train_rows = open(Train_ANNOTS_PATH).read().strip().split("\n")
+validation_rows = open(Validation_ANNOTS_PATH).read().strip().split("\n")
 # initialize the list of data (images), our target output predictions
 # (bounding box coordinates), along with the filenames of the
 # individual images
-data = []
-filenames = []
-imagePaths = []
+train_data = []
+trainFilenames = []
+train_imagePaths = []
+validation_data = []
+validationFilenames = []
+validation_imagePaths = []
 labels = []
-bboxes = []
+trainbboxes = []
+validationbboxes =[]
 # loop over all CSV files in the annotations directory
 # loop over the rows
-for row in rows:
+for train_row in train_rows:
 	# break the row into the filename, bounding box coordinates,
 	# and class label
-	row = row.split(",")
-	(name, width, height, label, xtl, ytl, xbr, ybr, z_order) = row
+	train_row = train_row.split(",")
+	(name, width, height, label, xtl, ytl, xbr, ybr, z_order) = train_row
 	# derive the path to the input image, load the image (in OpenCV
 	# format), and grab its dimensions
-	imagePath = os.path.sep.join([IMAGES_PATH, name])
+	train_imagePath = os.path.sep.join([Train_IMAGES_PATH, name])
 	#print(imagePath)
-	image = cv2.imread(imagePath)
+	image = cv2.imread(train_imagePath)
 	# plt.imshow(image)
 	# plt.show()
 	(h, w) = image.shape[:2]
@@ -79,28 +89,72 @@ for row in rows:
 		ybr = 0
 		label = "No Human"
 	# load the image and preprocess it
-	image = load_img(imagePath, target_size=(224, 224))
-	image = img_to_array(image)
+	train_image = load_img(train_imagePath, target_size=(224, 224))
+	train_image = img_to_array(train_image)
 	# update our list of data, targets, and filenames
-	data.append(image)
+	train_data.append(train_image)
 	labels.append(label)
-	bboxes.append((xtl, ytl, xbr, ybr))
-	filenames.append(name)
-	imagePaths.append(imagePath)
+	trainbboxes.append((xtl, ytl, xbr, ybr))
+	trainFilenames.append(train_image)
+	train_imagePaths.append(train_imagePath)
 # convert the data and targets to NumPy arrays, scaling the input
 # pixel intensities from the range [0, 255] to [0, 1]
-data = np.array(data, dtype="float32") / 255.0
+train_data = np.array(train_data, dtype="float32") / 255.0
 # if xtl != "":
 # 	bboxes = np.array(bboxes, dtype="float32")
-labels = np.array(labels)
-bboxes = np.array(bboxes, dtype="float32")
-imagePaths = np.array(imagePaths)
+train_labels = np.array(labels)
+train_boxes = np.array(trainbboxes, dtype="float32")
+print(len(train_boxes))
+print(len(train_data))
+train_imagePaths = np.array(train_imagePath)
 #print(data)
-
+for validation_row in validation_rows:
+	# break the row into the filename, bounding box coordinates,
+	# and class label
+	validation_row = validation_row.split(",")
+	(name, width, height, label, xtl, ytl, xbr, ybr, z_order) = validation_row
+	# derive the path to the input image, load the image (in OpenCV
+	# format), and grab its dimensions
+	validation_imagePath = os.path.sep.join([Validation_IMAGES_PATH, name])
+	#print(imagePath)
+	image = cv2.imread(validation_imagePath)
+	# plt.imshow(image)
+	# plt.show()
+	(h, w) = image.shape[:2]
+	# scale the bounding box coordinates relative to the spatial
+	# dimensions of the input image
+	if xtl != "":
+		xtl = float(xtl) / w
+		ytl = float(ytl) / h
+		xbr = float(xbr) / w
+		ybr = float(ybr) / h
+	else:
+		xtl = 0
+		ytl = 0
+		xbr = 0
+		ybr = 0
+		label = "No Human"
+	# load the image and preprocess it
+	validation_image = load_img(validation_imagePath, target_size=(224, 224))
+	validation_image = img_to_array(validation_image)
+	# update our list of data, targets, and filenames
+	validation_data.append(validation_image)
+	labels.append(label)
+	validationbboxes.append((xtl, ytl, xbr, ybr))
+	validationFilenames.append(validation_image)
+	validation_imagePaths.append(validation_imagePath)
+# convert the data and targets to NumPy arrays, scaling the input
+# pixel intensities from the range [0, 255] to [0, 1]
+validation_data = np.array(validation_data, dtype="float32") / 255.0
+# if xtl != "":
+# 	bboxes = np.array(bboxes, dtype="float32")
+validation_labels = np.array(labels)
+validation_boxes = np.array(validationbboxes, dtype="float32")
+train_imagePaths = np.array(validation_imagePath)
 # partition the data into training and testing splits using 90% of
 # the data for training and the remaining 10% for testing
-split = train_test_split(data, bboxes, filenames, test_size=0.10,
-	random_state=42)
+# split = train_test_split(data, bboxes, filenames, test_size=0.10,
+# 	random_state=42)
 # perform one-hot encoding on the labels
 lb = LabelBinarizer()
 labels = lb.fit_transform(labels)
@@ -110,18 +164,18 @@ labels = lb.fit_transform(labels)
 if len(lb.classes_) == 2:
 	labels = to_categorical(labels)
 # unpack the data split
-(trainImages, testImages) = split[:2]
-(trainBBoxes, testBBoxes) = split[2:4]
-(trainFilenames, testFilenames) = split[4:]
+# (trainImages, ValidationImages) = split[:2]
+# (trainBBoxes, ValidationstBBoxes) = split[2:4]
+# (trainFilenames, ValidationFilenames) = split[4:]
 
 
 # write the testing filenames to disk so that we can use then
 # when evaluating/testing our bounding box regressor
-print("[INFO] saving testing filenames...")
-f = open(TEST_FILENAMES, "w")
-print(TEST_FILENAMES)
-f.write("\n".join(TEST_FILENAMES))
-f.close()
+# print("[INFO] saving testing filenames...")
+# f = open(TEST_FILENAMES, "w")
+# print(TEST_FILENAMES)
+# f.write("\n".join(TEST_FILENAMES))
+# f.close()
 # load the VGG16 network, ensuring the head FC layers are left off
 vgg = VGG16(weights="imagenet", include_top=False,
 	input_tensor=Input(shape=(224, 224, 3)))
@@ -151,42 +205,46 @@ softmaxHead = Dense(len(lb.classes_), activation="sigmoid",
 model = Model(
 	inputs=vgg.input,
 	outputs=(bboxHead))
+# This callback will stop the training when there is no improvement in
+# the loss for three consecutive epochs.
+#callback = keras.callbacks.EarlyStopping(monitor='loss', patience=3)
+callback = keras.callbacks.ModelCheckpoint(MODEL_PATH, monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
 # initialize the optimizer, compile the model, and show the model
 # summary
 opt = Adam(lr=INIT_LR)
-model.compile(loss="mse", optimizer=opt, metrics=["accuracy"])
+metrics = [TruePositives(name='tp'),TrueNegatives(name='tn'), FalseNegatives(name='fn'), FalsePositives(name='fp'),BinaryAccuracy(name='accuracy'),Recall(name='recall'),Precision(name='precision'),AUC(name='auc')]
+model.compile(loss="mse", optimizer=opt, metrics=metrics)
 print(model.summary())
 # prediction
 print("[INFO] training model...")
 print("[INFO] training bounding box regressor...")
 H = model.fit(
-	trainImages, trainBBoxes,
-	validation_data=(testImages, testBBoxes),
-	batch_size=BATCH_SIZE,
-	epochs=NUM_EPOCHS,
+	train_data, train_boxes,
+	validation_data=(validation_data, validation_boxes),
+	steps_per_epoch=BATCH_SIZE,
+	epochs=NUM_EPOCHS,callbacks=[callback],
 	verbose=1)
 
 # serialize the model to disk
 print("[INFO] saving object detector model...")
 model.save(MODEL_PATH, save_format="h5")
 for i in range(len(model.layers)):
-    layer = model.layers[i]
-    if 'conv' not in layer.name:
-        continue
-    print(i , layer.name , layer.output.shape)
+	layer = model.layers[i]
+	if 'conv' not in layer.name:
+		continue
+	print(i, layer.name, layer.output.shape)
 model = Model(inputs=model.inputs, outputs=model.layers[1].output)
-image = load_img( image , target_size=(224,224))
 # expand dimensions so that it represents a single 'sample'
-image = expand_dims(image, axis=0)
+image = expand_dims(train_image, axis=0)
 # prepare the image (e.g. scale pixel values for the vgg)
 image = preprocess_input(image)
 # get feature map for first hidden layer
 feature_maps = model.predict(image)
 fig = plt.figure(figsize=(20, 15))
 for i in range(1, feature_maps.shape[3] + 1):
-    plt.subplot(8, 8, i)
-    plt.imshow(feature_maps[0, :, :, i - 1], cmap='gray')
-
+	plt.subplot(8, 8, i)
+	plt.imshow(feature_maps[0, :, :, i - 1], cmap='gray')
+plt.savefig(FEATUREMAP_PATH)
 plt.show()
 # serialize the label binarizer to disk
 print("[INFO] saving label binarizer...")
@@ -198,7 +256,8 @@ lossNames = ["loss"]
 N = np.arange(0, NUM_EPOCHS)
 plt.style.use("ggplot")
 (fig, ax) = plt.subplots(3, 1, figsize=(13, 13))
- #create a new figure for the accuracies
+
+# create a new figure for the accuracies
 N = NUM_EPOCHS
 plt.style.use("ggplot")
 plt.figure()
